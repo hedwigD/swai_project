@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>FastAPI Form 데이터 전송 예시</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+</head>
+<body>
+    <h2>FastAPI Form 데이터 전송 예시</h2>
+    <form id="myForm">
+        <label for="data">data:</label>
+        <input type="text" id="data" name="data" value="hello world"><br><br>
+
+        <label for="request">request (JSON 문자열):</label>
+        <input type="text" id="request" name="request" value='{"data": "json value", "other": 123}'><br><br>
+
+        <button type="submit" id="btnAjax">전송(ajax)</button>
+        <button type="button" id="btnAxios">전송(axios)</button>
+    </form>
+
+    <h3>서버 응답:</h3>
+    <pre id="response"></pre>
+
+    <script>
+        $(document).ready(function() {
+            const urlBackend = 'https://pardon-ion-brute.ngrok-free.dev';
+
+            $('#btnAxios').on('click', function (e) {
+                e.preventDefault();
+
+                const formData = new FormData($('#myForm')[0]);
+
+                axios.post(urlBackend + '/data', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
+                    }
+                })
+                .then(function(response) {
+                    $('#response').text(JSON.stringify(response.data, null, 2));
+                })
+                .catch(function(error) {
+                    if (error.response) {
+                        $('#response').text('에러: ' + JSON.stringify(error.response.data));
+                    } else {
+                        $('#response').text('에러: ' + error.message);
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
