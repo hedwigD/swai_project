@@ -5,10 +5,18 @@ desktop.ini
 node_modules/
 dist/
 build/
+dev/
+backend/.venv/
+backend/uploads/
+uploads/
 
 *.log
 *.tmp
 *.swp
+__pycache__/
+*.pyc
 
 .env
 .env.*
+!.env.example
+!backend/.env.example

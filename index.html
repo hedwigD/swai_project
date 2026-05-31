@@ -16,7 +16,7 @@
     <section id="setupPage" class="setup">
       <form id="roomForm" class="panel">
         <h1>스터디룸 만들기</h1>
-        <p class="hint">참가자를 등록하고 세션을 시작하면 브라우저가 마이크로 실제 녹음을 시작합니다.</p>
+        <p class="hint">참가자를 등록하고 세션을 시작하면 실제 녹음 파일을 FastAPI 백엔드로 전송합니다. 백엔드는 STT, 구간 판정, Spreadsheet 기록을 처리합니다.</p>
 
         <label class="field">
           <span>스터디룸 이름</span>
@@ -34,8 +34,23 @@
         </label>
 
         <label class="field">
-          <span>백엔드 주소</span>
-          <input id="backendUrl" autocomplete="off" value="https://pardon-ion-brute.ngrok-free.dev" placeholder="비워두면 업로드하지 않음">
+          <span>FastAPI 백엔드 URL</span>
+          <input id="backendUrl" autocomplete="off" value="http://127.0.0.1:8000">
+        </label>
+
+        <label class="field">
+          <span>Apps Script URL</span>
+          <input id="appsScriptUrl" autocomplete="off" value="https://script.google.com/macros/s/AKfycbyUIBCtr6azQwxAMGdEAiVQIcX1yvQWHdfVs41lViRHPNBbxi7PHiLw6vdjT2iwZlqK/exec">
+        </label>
+
+        <label class="field">
+          <span>Spreadsheet 탭 이름</span>
+          <input id="sheetName" autocomplete="off" value="swai_segments">
+        </label>
+
+        <label class="field">
+          <span>사용자 ID</span>
+          <input id="userId" autocomplete="off" readonly>
         </label>
 
         <div class="field">
@@ -90,7 +105,7 @@
 
         <section class="panel">
           <h2>현재 말한 사람</h2>
-          <p class="hint">MVP에서는 잡담 구간의 발화자를 수동 선택값으로 기록합니다.</p>
+          <p class="hint">MVP에서는 잡담 구간의 발화자를 수동 선택값으로 함께 보냅니다.</p>
           <div id="speakerButtons" class="speaker-grid"></div>
         </section>
 
