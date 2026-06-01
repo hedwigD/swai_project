@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -47,7 +46,7 @@ def now_stamp() -> str:
 
 
 def sanitize_filename(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9가-힣_.-]+", "_", value).strip("._")
+    cleaned = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value).strip("._")
     return cleaned or "audio"
 
 
@@ -143,12 +142,16 @@ def transcribe_audio(audio_path: Path | None) -> dict[str, Any]:
 def classify_segment(transcript: str, metadata: dict[str, Any]) -> dict[str, str]:
     text = transcript.lower()
     study_words = [
-        "공부", "문제", "풀이", "정리", "개념", "알고리즘", "코드", "구현",
-        "과제", "시험", "복습", "설명", "자료", "발표", "함수", "데이터"
+        "\uacf5\ubd80", "\ubb38\uc81c", "\ud480\uc774", "\uc815\ub9ac",
+        "\uac1c\ub150", "\uc54c\uace0\ub9ac\uc998", "\ucf54\ub4dc", "\uad6c\ud604",
+        "\uacfc\uc81c", "\uc2dc\ud5d8", "\ubcf5\uc2b5", "\uc124\uba85",
+        "\uc790\ub8cc", "\ubc1c\ud45c", "\ud568\uc218", "\ub370\uc774\ud130"
     ]
     chat_words = [
-        "잡담", "밥", "카페", "게임", "유튜브", "영화", "주말", "놀자",
-        "술", "맛집", "ㅋㅋ", "하하", "재밌", "졸려", "집에"
+        "\uc7a1\ub2f4", "\ubc25", "\uce74\ud398", "\uac8c\uc784",
+        "\uc720\ud29c\ube0c", "\uc601\ud654", "\uc8fc\ub9d0", "\ub180\uc790",
+        "\uc220", "\ub9db\uc9d1", "\u314b\u314b", "\ud558\ud558",
+        "\uc7ac\ubc0c", "\uc878\ub824", "\uc9d1\uc5d0"
     ]
 
     study_hits = [word for word in study_words if word in text]

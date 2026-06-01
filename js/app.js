@@ -121,7 +121,10 @@ async function sendBackendEvent(eventName, payload = {}) {
   try {
     const response = await fetch(`${cleanBackendUrl()}/event`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true"
+      },
       body: JSON.stringify({
         event: eventName,
         metadata: {
@@ -289,6 +292,9 @@ async function uploadSegmentRecord(segment) {
   try {
     const response = await fetch(`${cleanBackendUrl()}/audio-segment`, {
       method: "POST",
+      headers: {
+        "ngrok-skip-browser-warning": "true"
+      },
       body: formData
     });
     const data = await response.json();
@@ -426,6 +432,11 @@ async function startSession() {
 
   if (!navigator.mediaDevices?.getUserMedia) {
     alert("이 브라우저에서는 마이크 녹음을 사용할 수 없습니다. 최신 Chrome, Edge, Safari를 사용해 주세요.");
+    return;
+  }
+
+  if (!state.backendUrl) {
+    alert("Colab에서 출력된 ngrok URL을 FastAPI 백엔드 URL에 입력해 주세요.");
     return;
   }
 

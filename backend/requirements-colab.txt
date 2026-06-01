@@ -1,0 +1,3 @@
+-r requirements.txt
+pyngrok
+nest-asyncio
