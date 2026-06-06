@@ -36,11 +36,23 @@ os.environ["AUDIO_UPLOAD_DIR"] = "uploads"
 os.environ["SAVE_AUDIO"] = "true"
 os.environ["CORS_ALLOW_ORIGINS"] = "*"
 
+# Qwen2.5 LLM classification and summary.
+os.environ["ENABLE_HF_LLM"] = "true"
+os.environ["HF_MODEL_ID"] = "Qwen/Qwen2.5-7B-Instruct"
+os.environ["HF_LOAD_IN_4BIT"] = "true"
+os.environ["HF_MAX_NEW_TOKENS"] = "180"
+os.environ["HF_TEMPERATURE"] = "0.1"
+
+# Optional. Uncomment only when Hugging Face asks for authentication or rate limits you.
+# os.environ["HF_TOKEN"] = "YOUR_HUGGING_FACE_TOKEN"
+
 # Recommended for stable ngrok use.
 os.environ["NGROK_AUTHTOKEN"] = "YOUR_NGROK_AUTHTOKEN"
 ```
 
 `OPENAI_API_KEY` can be left blank for a fallback demo. In that case, audio upload and spreadsheet logging work, but STT is skipped.
+
+For the Qwen2.5 demo, use a Colab GPU runtime. A T4 GPU with 4-bit loading is the target setup. If model loading runs out of memory, set `HF_MODEL_ID` to `Qwen/Qwen2.5-3B-Instruct`.
 
 ## 3. Start FastAPI and ngrok
 
@@ -60,6 +72,26 @@ https://xxxx.ngrok-free.app
 ```
 
 Copy that URL.
+
+Optional warm-up cell:
+
+```python
+import requests
+
+requests.post(f"{BACKEND_URL}/load-llm").json()
+```
+
+The warm-up cell downloads and loads Qwen2.5 before the first real audio upload. Without this, the first uploaded segment may take a while because it triggers the model load.
+
+Optional bonus chat test:
+
+```python
+import requests
+
+requests.post(f"{BACKEND_URL}/data", data={"data": "안녕, 지금 모델이 동작해?"}).json()
+```
+
+The response should contain an `answer` field. This is the same shape used by `dev/bonus/llm_chat.html`.
 
 ## 4. Run the Frontend
 
@@ -89,7 +121,9 @@ Then start the study session.
 - Audio Blob is sent to the Colab FastAPI backend.
 - Colab saves the uploaded audio under `backend/uploads`.
 - If `OPENAI_API_KEY` is set, Colab runs STT and returns `transcript`.
-- Backend classifies the segment as `study` or `chat`.
+- If `ENABLE_HF_LLM=true`, Backend sends the transcript to Qwen2.5 for `study`/`chat` classification and one-line summary.
+- If Qwen2.5 is disabled or fails, Backend falls back to keyword/volume classification.
+- The bonus `/data` endpoint can return a plain Qwen2.5 chat response for `llm_chat.html`.
 - Backend appends records to Google Spreadsheet through Apps Script.
 
 ## Common Issues
@@ -97,4 +131,5 @@ Then start the study session.
 - If the frontend says backend upload failed, check that the Colab runtime is still alive.
 - If `/health` does not open at the ngrok URL, restart the Colab backend cell.
 - If `stt_status=disabled`, `OPENAI_API_KEY` is missing or blank.
+- If `llm_status=hf_llm_unavailable`, check Colab GPU memory, Hugging Face token, and whether `transformers`, `accelerate`, and `bitsandbytes` installed correctly.
 - If spreadsheet logging fails, check `APPS_SCRIPT_URL` and Apps Script deployment permissions.

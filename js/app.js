@@ -133,14 +133,15 @@ async function sendBackendEvent(eventName, payload = {}) {
         }
       })
     });
-    const data = await response.json();
+    const responseText = await response.text();
+    const data = responseText ? JSON.parse(responseText) : {};
     return {
       ok: response.ok,
       status: data.spreadsheet_status || data.status || `HTTP ${response.status}`,
       data
     };
   } catch (error) {
-    return { ok: false, status: "백엔드 전송 실패", error };
+    return { ok: false, status: `백엔드 전송 실패: ${error.message}`, error };
   }
 }
 
@@ -250,6 +251,20 @@ function renderSegments() {
       item.appendChild(transcript);
     }
 
+    if (segment.llmSummary) {
+      const summary = document.createElement("p");
+      summary.className = "hint";
+      summary.textContent = `AI 요약: ${segment.llmSummary}`;
+      item.appendChild(summary);
+    }
+
+    if (segment.llmStatus && segment.llmStatus !== "disabled") {
+      const llm = document.createElement("p");
+      llm.className = "hint";
+      llm.textContent = `AI 판정 상태: ${segment.llmStatus}`;
+      item.appendChild(llm);
+    }
+
     const download = document.createElement("a");
     download.href = segment.url;
     download.download = `${state.roomName || "study"}-${segment.index}.webm`;
@@ -297,7 +312,17 @@ async function uploadSegmentRecord(segment) {
       },
       body: formData
     });
-    const data = await response.json();
+    const responseText = await response.text();
+    let data = {};
+
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch (parseError) {
+      segment.uploadStatus = `응답 JSON 아님: HTTP ${response.status}`;
+      renderSegments();
+      updateBoard();
+      return;
+    }
 
     segment.uploadStatus = response.ok ? data.spreadsheet_status || "백엔드 처리 완료" : `백엔드 실패 ${response.status}`;
     segment.decision = data.decision || segment.decision;
@@ -305,8 +330,12 @@ async function uploadSegmentRecord(segment) {
     segment.transcript = data.transcript || "";
     segment.sttStatus = data.stt_status || "";
     segment.classificationReason = data.classification_reason || "";
+    segment.classificationMethod = data.classification_method || "";
+    segment.llmStatus = data.llm_status || "";
+    segment.llmSummary = data.llm_summary || "";
+    segment.llmModel = data.llm_model || "";
   } catch (error) {
-    segment.uploadStatus = "백엔드 전송 실패";
+    segment.uploadStatus = `백엔드 전송 실패: ${error.message}`;
   }
 
   renderSegments();
@@ -382,6 +411,11 @@ function startRecorder() {
       createdAt: endedAt,
       ...analysis,
       transcript: "",
+      classificationMethod: "",
+      classificationReason: "",
+      llmStatus: "",
+      llmSummary: "",
+      llmModel: "",
       uploadStatus: "대기"
     };
 
@@ -537,7 +571,7 @@ async function finishSession() {
 }
 
 function downloadCsv() {
-  const header = ["index", "createdAt", "durationSeconds", "decision", "averageVolume", "loudRatio", "speaker", "transcript", "uploadStatus"];
+  const header = ["index", "createdAt", "durationSeconds", "decision", "averageVolume", "loudRatio", "speaker", "transcript", "llmStatus", "llmSummary", "uploadStatus"];
   const rows = state.segments.map((segment) => [
     segment.index,
     segment.createdAt.toISOString(),
@@ -547,6 +581,8 @@ function downloadCsv() {
     Number(segment.loudRatio.toFixed(3)),
     segment.speaker || "",
     segment.transcript || "",
+    segment.llmStatus || "",
+    segment.llmSummary || "",
     segment.uploadStatus
   ]);
   const csv = [header, ...rows]
