@@ -4,3 +4,4 @@ nest-asyncio
 transformers>=4.44.0
 accelerate
 bitsandbytes
+openai-whisper

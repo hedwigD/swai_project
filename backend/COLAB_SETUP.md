@@ -32,6 +32,10 @@ os.environ["OPENAI_API_KEY"] = "YOUR_OPENAI_API_KEY"
 os.environ["APPS_SCRIPT_URL"] = "YOUR_APPS_SCRIPT_EXEC_URL"
 os.environ["SPREADSHEET_TABLE"] = "swai_segments"
 os.environ["OPENAI_TRANSCRIBE_MODEL"] = "gpt-4o-mini-transcribe"
+os.environ["STT_PROVIDER"] = "auto"
+os.environ["LOCAL_STT_MODEL"] = "small"
+os.environ["LOCAL_STT_LANGUAGE"] = "ko"
+os.environ["LOCAL_STT_DEVICE"] = "auto"
 os.environ["AUDIO_UPLOAD_DIR"] = "uploads"
 os.environ["SAVE_AUDIO"] = "true"
 os.environ["CORS_ALLOW_ORIGINS"] = "*"
@@ -50,9 +54,9 @@ os.environ["HF_TEMPERATURE"] = "0.1"
 os.environ["NGROK_AUTHTOKEN"] = "YOUR_NGROK_AUTHTOKEN"
 ```
 
-`OPENAI_API_KEY` can be left blank for a fallback demo. In that case, audio upload and spreadsheet logging work, but STT is skipped.
+`OPENAI_API_KEY` can be left blank. With `STT_PROVIDER=auto`, the backend uses local Whisper in Colab when there is no OpenAI API key.
 
-For the Qwen2.5 demo, use a Colab GPU runtime. A T4 GPU with 4-bit loading is the target setup. If model loading runs out of memory, set `HF_MODEL_ID` to `Qwen/Qwen2.5-3B-Instruct`.
+For the Qwen2.5 and local Whisper demo, use a Colab GPU runtime. A T4 GPU with 4-bit Qwen loading is the target setup. If model loading runs out of memory, set `HF_MODEL_ID` to `Qwen/Qwen2.5-3B-Instruct` or set `LOCAL_STT_MODEL` to `base`.
 
 ## 3. Start FastAPI and ngrok
 
@@ -78,10 +82,11 @@ Optional warm-up cell:
 ```python
 import requests
 
+requests.post(f"{BACKEND_URL}/load-stt").json()
 requests.post(f"{BACKEND_URL}/load-llm").json()
 ```
 
-The warm-up cell downloads and loads Qwen2.5 before the first real audio upload. Without this, the first uploaded segment may take a while because it triggers the model load.
+The warm-up cell downloads and loads local Whisper and Qwen2.5 before the first real audio upload. Without this, the first uploaded segment may take a while because it triggers the model load.
 
 Optional bonus chat test:
 
@@ -120,7 +125,8 @@ Then start the study session.
 - Frontend records real audio in the browser.
 - Audio Blob is sent to the Colab FastAPI backend.
 - Colab saves the uploaded audio under `backend/uploads`.
-- If `OPENAI_API_KEY` is set, Colab runs STT and returns `transcript`.
+- If `OPENAI_API_KEY` is set, Colab can use OpenAI STT.
+- If `OPENAI_API_KEY` is blank and `STT_PROVIDER=auto`, Colab uses local Whisper STT and returns `transcript`.
 - If `ENABLE_HF_LLM=true`, Backend sends the transcript to Qwen2.5 for `study`/`chat` classification and one-line summary.
 - If Qwen2.5 is disabled or fails, Backend falls back to keyword/volume classification.
 - The bonus `/data` endpoint can return a plain Qwen2.5 chat response for `llm_chat.html`.
@@ -130,6 +136,6 @@ Then start the study session.
 
 - If the frontend says backend upload failed, check that the Colab runtime is still alive.
 - If `/health` does not open at the ngrok URL, restart the Colab backend cell.
-- If `stt_status=disabled`, `OPENAI_API_KEY` is missing or blank.
+- If `stt_status=failed`, check local Whisper model loading, ffmpeg, and GPU memory.
 - If `llm_status=hf_llm_unavailable`, check Colab GPU memory, Hugging Face token, and whether `transformers`, `accelerate`, and `bitsandbytes` installed correctly.
 - If spreadsheet logging fails, check `APPS_SCRIPT_URL` and Apps Script deployment permissions.

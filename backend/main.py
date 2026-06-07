@@ -24,7 +24,11 @@ UPLOAD_DIR = Path(os.getenv("AUDIO_UPLOAD_DIR", "uploads"))
 SAVE_AUDIO = os.getenv("SAVE_AUDIO", "true").lower() != "false"
 DEFAULT_SHEET_NAME = os.getenv("SPREADSHEET_TABLE", "swai_segments")
 DEFAULT_APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL", "")
+STT_PROVIDER = os.getenv("STT_PROVIDER", "auto").strip().lower()
 TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
+LOCAL_STT_MODEL = os.getenv("LOCAL_STT_MODEL", "small")
+LOCAL_STT_LANGUAGE = os.getenv("LOCAL_STT_LANGUAGE", "ko")
+LOCAL_STT_DEVICE = os.getenv("LOCAL_STT_DEVICE", "auto").strip().lower()
 ENABLE_HF_LLM = os.getenv("ENABLE_HF_LLM", "false").lower() == "true"
 HF_MODEL_ID = os.getenv("HF_MODEL_ID", "Qwen/Qwen2.5-7B-Instruct")
 HF_TOKEN = os.getenv("HF_TOKEN") or None
@@ -35,6 +39,9 @@ HF_TEMPERATURE = float(os.getenv("HF_TEMPERATURE", "0.1"))
 hf_pipeline = None
 hf_tokenizer = None
 hf_load_error = ""
+local_stt_model = None
+local_stt_device = ""
+local_stt_load_error = ""
 
 app = FastAPI(title=APP_NAME)
 app.add_middleware(
@@ -101,31 +108,7 @@ async def save_upload(audio: UploadFile, metadata: dict[str, Any]) -> tuple[Path
     return target_path, size
 
 
-def transcribe_audio(audio_path: Path | None) -> dict[str, Any]:
-    if audio_path is None:
-        return {
-            "transcript": "",
-            "stt_status": "skipped",
-            "stt_model": TRANSCRIBE_MODEL,
-            "stt_error": "audio file was not saved"
-        }
-
-    if not os.getenv("OPENAI_API_KEY"):
-        return {
-            "transcript": "",
-            "stt_status": "disabled",
-            "stt_model": TRANSCRIBE_MODEL,
-            "stt_error": "OPENAI_API_KEY is not set"
-        }
-
-    if OpenAI is None:
-        return {
-            "transcript": "",
-            "stt_status": "disabled",
-            "stt_model": TRANSCRIBE_MODEL,
-            "stt_error": "openai package is not installed"
-        }
-
+def transcribe_with_openai(audio_path: Path) -> dict[str, Any]:
     try:
         client = OpenAI()
         with audio_path.open("rb") as file:
@@ -147,6 +130,113 @@ def transcribe_audio(audio_path: Path | None) -> dict[str, Any]:
             "stt_model": TRANSCRIBE_MODEL,
             "stt_error": str(error)
         }
+
+
+def resolve_local_stt_device() -> str:
+    if LOCAL_STT_DEVICE != "auto":
+        return LOCAL_STT_DEVICE
+
+    try:
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
+def load_local_stt_model() -> tuple[Any | None, str]:
+    global local_stt_model, local_stt_device, local_stt_load_error
+
+    if local_stt_model is not None:
+        return local_stt_model, ""
+    if local_stt_load_error:
+        return None, local_stt_load_error
+
+    try:
+        import whisper
+
+        local_stt_device = resolve_local_stt_device()
+        local_stt_model = whisper.load_model(LOCAL_STT_MODEL, device=local_stt_device)
+        return local_stt_model, ""
+    except Exception as error:
+        local_stt_load_error = str(error)
+        return None, local_stt_load_error
+
+
+def transcribe_with_local_whisper(audio_path: Path) -> dict[str, Any]:
+    model, error = load_local_stt_model()
+    model_name = f"local-whisper:{LOCAL_STT_MODEL}"
+    if model is None:
+        return {
+            "transcript": "",
+            "stt_status": "failed",
+            "stt_model": model_name,
+            "stt_error": error,
+        }
+
+    try:
+        result = model.transcribe(
+            str(audio_path),
+            language=LOCAL_STT_LANGUAGE or None,
+            fp16=local_stt_device == "cuda",
+            verbose=False,
+        )
+        text = str(result.get("text", "")).strip()
+        return {
+            "transcript": text,
+            "stt_status": "ok",
+            "stt_model": model_name,
+            "stt_error": "",
+        }
+    except Exception as error:
+        return {
+            "transcript": "",
+            "stt_status": "failed",
+            "stt_model": model_name,
+            "stt_error": str(error),
+        }
+
+
+def transcribe_audio(audio_path: Path | None) -> dict[str, Any]:
+    if audio_path is None:
+        return {
+            "transcript": "",
+            "stt_status": "skipped",
+            "stt_model": STT_PROVIDER,
+            "stt_error": "audio file was not saved"
+        }
+
+    if STT_PROVIDER in {"disabled", "none", "off"}:
+        return {
+            "transcript": "",
+            "stt_status": "disabled",
+            "stt_model": "disabled",
+            "stt_error": "STT_PROVIDER is disabled"
+        }
+
+    if STT_PROVIDER not in {"auto", "openai", "local_whisper", "whisper"}:
+        return {
+            "transcript": "",
+            "stt_status": "failed",
+            "stt_model": STT_PROVIDER,
+            "stt_error": f"Unsupported STT_PROVIDER: {STT_PROVIDER}"
+        }
+
+    can_use_openai = bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None
+    if STT_PROVIDER in {"auto", "openai"} and can_use_openai:
+        openai_result = transcribe_with_openai(audio_path)
+        if STT_PROVIDER == "openai" or openai_result["stt_status"] == "ok":
+            return openai_result
+
+    if STT_PROVIDER == "openai":
+        reason = "OPENAI_API_KEY is not set" if not os.getenv("OPENAI_API_KEY") else "openai package is not installed"
+        return {
+            "transcript": "",
+            "stt_status": "disabled",
+            "stt_model": TRANSCRIBE_MODEL,
+            "stt_error": reason
+        }
+
+    return transcribe_with_local_whisper(audio_path)
 
 
 def extract_json_object(text: str) -> dict[str, Any] | None:
@@ -462,13 +552,30 @@ async def append_to_spreadsheet(record: dict[str, Any], metadata: dict[str, Any]
         }
 
 
+def effective_stt_model_name() -> str:
+    if STT_PROVIDER in {"disabled", "none", "off"}:
+        return "disabled"
+    if STT_PROVIDER == "openai":
+        return TRANSCRIBE_MODEL
+    if STT_PROVIDER == "auto" and bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None:
+        return TRANSCRIBE_MODEL
+    return f"local-whisper:{LOCAL_STT_MODEL}"
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "app": APP_NAME,
-        "stt_enabled": bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None,
-        "stt_model": TRANSCRIBE_MODEL,
+        "stt_enabled": STT_PROVIDER not in {"disabled", "none", "off"},
+        "stt_provider": STT_PROVIDER,
+        "stt_model": effective_stt_model_name(),
+        "openai_stt_enabled": bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None,
+        "local_stt_model": LOCAL_STT_MODEL,
+        "local_stt_language": LOCAL_STT_LANGUAGE,
+        "local_stt_device": local_stt_device or LOCAL_STT_DEVICE,
+        "local_stt_loaded": local_stt_model is not None,
+        "local_stt_load_error": local_stt_load_error,
         "hf_llm_enabled": ENABLE_HF_LLM,
         "hf_model_id": HF_MODEL_ID,
         "hf_load_in_4bit": HF_LOAD_IN_4BIT,
@@ -476,6 +583,35 @@ async def health() -> dict[str, Any]:
         "hf_load_error": hf_load_error,
         "save_audio": SAVE_AUDIO,
         "upload_dir": str(UPLOAD_DIR),
+    }
+
+
+@app.get("/load-stt")
+@app.post("/load-stt")
+async def load_stt() -> dict[str, Any]:
+    if STT_PROVIDER in {"disabled", "none", "off"}:
+        return {
+            "status": "disabled",
+            "stt_provider": STT_PROVIDER,
+        }
+
+    if STT_PROVIDER == "openai":
+        return {
+            "status": "ok" if bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None else "disabled",
+            "stt_provider": STT_PROVIDER,
+            "stt_model": TRANSCRIBE_MODEL,
+            "stt_error": "" if bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None else "OPENAI_API_KEY or openai package is missing",
+        }
+
+    model, error = load_local_stt_model()
+    return {
+        "status": "ok" if model is not None else "failed",
+        "stt_provider": STT_PROVIDER,
+        "stt_model": f"local-whisper:{LOCAL_STT_MODEL}",
+        "local_stt_language": LOCAL_STT_LANGUAGE,
+        "local_stt_device": local_stt_device or LOCAL_STT_DEVICE,
+        "local_stt_loaded": model is not None,
+        "local_stt_load_error": error,
     }
 
 
