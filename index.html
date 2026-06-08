@@ -34,21 +34,6 @@
         </label>
 
         <label class="field">
-          <span>FastAPI 백엔드 URL (Colab ngrok URL)</span>
-          <input id="backendUrl" autocomplete="off" value="https://pardon-ion-brute.ngrok-free.dev">
-        </label>
-
-        <label class="field">
-          <span>Apps Script URL</span>
-          <input id="appsScriptUrl" autocomplete="off" value="https://script.google.com/macros/s/AKfycbyUIBCtr6azQwxAMGdEAiVQIcX1yvQWHdfVs41lViRHPNBbxi7PHiLw6vdjT2iwZlqK/exec">
-        </label>
-
-        <label class="field">
-          <span>Spreadsheet 탭 이름</span>
-          <input id="sheetName" autocomplete="off" value="swai_segments">
-        </label>
-
-        <label class="field">
           <span>사용자 ID</span>
           <input id="userId" autocomplete="off" readonly>
         </label>
@@ -90,6 +75,13 @@
             <div class="chalk-box"><span>최근 떠든 사람</span><strong id="lastSpeaker">-</strong></div>
           </div>
         </div>
+        <div class="decision-strip" aria-live="polite">
+          <div class="decision-strip-head">
+            <span>최근 판정</span>
+            <span>최근 8개</span>
+          </div>
+          <div id="decisionFeed" class="decision-feed"></div>
+        </div>
       </div>
 
       <aside class="side">
@@ -109,10 +101,6 @@
           <div id="speakerButtons" class="speaker-grid"></div>
         </section>
 
-        <section class="panel">
-          <h2>최근 녹음</h2>
-          <div id="segments" class="segment-list"></div>
-        </section>
       </aside>
     </section>
 
@@ -134,6 +122,20 @@
       </div>
     </section>
   </main>
+
+  <div id="segmentModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-backdrop" data-close-modal></div>
+    <section class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <span id="modalBadge" class="badge">공부</span>
+          <h2 id="modalTitle">구간 상세</h2>
+        </div>
+        <button type="button" id="closeModal" class="secondary modal-close" aria-label="닫기">x</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </section>
+  </div>
 
   <script src="js/app.js"></script>
 </body>

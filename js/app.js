@@ -1,8 +1,12 @@
+const DEFAULT_BACKEND_URL = "https://pardon-ion-brute.ngrok-free.dev";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUIBCtr6azQwxAMGdEAiVQIcX1yvQWHdfVs41lViRHPNBbxi7PHiLw6vdjT2iwZlqK/exec";
+const DEFAULT_SHEET_NAME = "swai_segments";
+
 const state = {
   roomName: "",
-  backendUrl: "",
-  appsScriptUrl: "",
-  sheetName: "swai_segments",
+  backendUrl: DEFAULT_BACKEND_URL,
+  appsScriptUrl: DEFAULT_APPS_SCRIPT_URL,
+  sheetName: DEFAULT_SHEET_NAME,
   sessionId: "",
   userId: "",
   userIp: "unknown",
@@ -28,7 +32,11 @@ const state = {
 const $ = (selector) => document.querySelector(selector);
 const participantsEl = $("#participants");
 const speakerButtonsEl = $("#speakerButtons");
-const segmentsEl = $("#segments");
+const decisionFeedEl = $("#decisionFeed");
+const segmentModalEl = $("#segmentModal");
+const modalBadgeEl = $("#modalBadge");
+const modalTitleEl = $("#modalTitle");
+const modalBodyEl = $("#modalBody");
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -219,59 +227,87 @@ function analyzeSegment(durationMs, samples) {
   };
 }
 
+function addModalRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "modal-row";
+
+  const name = document.createElement("span");
+  name.textContent = label;
+
+  const content = document.createElement("strong");
+  content.textContent = value || "-";
+
+  row.append(name, content);
+  modalBodyEl.appendChild(row);
+}
+
+function openSegmentModal(segment) {
+  if (!segmentModalEl || !modalBodyEl) return;
+
+  modalBodyEl.innerHTML = "";
+  modalBadgeEl.className = `badge ${segment.decision === "chat" ? "chat" : ""}`;
+  modalBadgeEl.textContent = segment.decision === "study" ? "공부" : "잡담";
+  modalTitleEl.textContent = segment.label;
+
+  addModalRow("녹음 시간", `${getTimeStamp(segment.startedAt)} - ${getTimeStamp(segment.endedAt)}`);
+  addModalRow("구간 길이", formatDuration(segment.durationMs));
+  addModalRow("떠든 사람", segment.speaker || "발화자 없음");
+  addModalRow("평균 소리", `${Math.round(segment.averageVolume)}%`);
+  addModalRow("백엔드 상태", segment.uploadStatus);
+  addModalRow("STT 상태", segment.sttStatus || "-");
+  addModalRow("AI 판정 상태", segment.llmStatus || "-");
+
+  if (segment.transcript) addModalRow("STT", segment.transcript);
+  if (segment.llmSummary) addModalRow("AI 요약", segment.llmSummary);
+  if (segment.classificationReason) addModalRow("판정 근거", segment.classificationReason);
+
+  const audio = document.createElement("audio");
+  audio.controls = true;
+  audio.src = segment.url;
+  modalBodyEl.appendChild(audio);
+
+  const download = document.createElement("a");
+  download.href = segment.url;
+  download.download = `${state.roomName || "study"}-${segment.index}.webm`;
+  download.textContent = "녹음 파일 다운로드";
+  download.className = "modal-download";
+  modalBodyEl.appendChild(download);
+
+  segmentModalEl.classList.remove("hidden");
+}
+
+function closeSegmentModal() {
+  segmentModalEl?.classList.add("hidden");
+}
+
 function renderSegments() {
-  segmentsEl.innerHTML = "";
+  if (!decisionFeedEl) return;
+  decisionFeedEl.innerHTML = "";
 
-  state.segments.slice().reverse().forEach((segment) => {
-    const item = document.createElement("article");
-    item.className = "segment";
+  const recentSegments = state.segments.slice(-8).reverse();
+  if (!recentSegments.length) {
+    const empty = document.createElement("p");
+    empty.className = "decision-empty";
+    empty.textContent = "아직 판정된 구간이 없습니다.";
+    decisionFeedEl.appendChild(empty);
+    return;
+  }
 
-    const title = document.createElement("strong");
+  recentSegments.forEach((segment) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `decision-card ${segment.decision === "chat" ? "chat" : "study"}`;
+    item.addEventListener("click", () => openSegmentModal(segment));
+
     const label = document.createElement("span");
-    const badge = document.createElement("span");
-    label.textContent = segment.label;
-    badge.className = `badge ${segment.decision === "chat" ? "chat" : ""}`;
-    badge.textContent = segment.decision === "study" ? "공부" : "잡담";
-    title.append(label, badge);
+    label.className = "decision-label";
+    label.textContent = segment.decision === "study" ? "공부" : "잡담";
 
-    const meta = document.createElement("p");
-    meta.className = "hint";
-    meta.textContent = `${formatDuration(segment.durationMs)} · 평균 소리 ${Math.round(segment.averageVolume)}% · ${segment.speaker || "발화자 없음"} · ${segment.uploadStatus}`;
+    const speaker = document.createElement("strong");
+    speaker.textContent = segment.decision === "chat" ? segment.speaker || "발화자 없음" : "떠든 사람 없음";
 
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    audio.src = segment.url;
-
-    item.append(title, meta, audio);
-
-    if (segment.transcript) {
-      const transcript = document.createElement("p");
-      transcript.className = "hint";
-      transcript.textContent = `STT: ${segment.transcript}`;
-      item.appendChild(transcript);
-    }
-
-    if (segment.llmSummary) {
-      const summary = document.createElement("p");
-      summary.className = "hint";
-      summary.textContent = `AI 요약: ${segment.llmSummary}`;
-      item.appendChild(summary);
-    }
-
-    if (segment.llmStatus && segment.llmStatus !== "disabled") {
-      const llm = document.createElement("p");
-      llm.className = "hint";
-      llm.textContent = `AI 판정 상태: ${segment.llmStatus}`;
-      item.appendChild(llm);
-    }
-
-    const download = document.createElement("a");
-    download.href = segment.url;
-    download.download = `${state.roomName || "study"}-${segment.index}.webm`;
-    download.textContent = "녹음 파일 다운로드";
-    item.appendChild(download);
-
-    segmentsEl.appendChild(item);
+    item.append(label, speaker);
+    decisionFeedEl.appendChild(item);
   });
 }
 
@@ -454,9 +490,9 @@ async function rotateSegment() {
 
 async function startSession() {
   state.roomName = $("#roomName").value.trim() || "이름 없는 스터디룸";
-  state.backendUrl = $("#backendUrl").value.trim();
-  state.appsScriptUrl = $("#appsScriptUrl").value.trim();
-  state.sheetName = $("#sheetName").value.trim() || "swai_segments";
+  state.backendUrl = DEFAULT_BACKEND_URL;
+  state.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
+  state.sheetName = DEFAULT_SHEET_NAME;
   state.segmentSeconds = Number($("#segmentSeconds").value);
   state.activeSpeaker = state.participants[0] || "";
   state.sessionId = `SESSION-${Date.now().toString(36).toUpperCase()}`;
@@ -466,11 +502,6 @@ async function startSession() {
 
   if (!navigator.mediaDevices?.getUserMedia) {
     alert("이 브라우저에서는 마이크 녹음을 사용할 수 없습니다. 최신 Chrome, Edge, Safari를 사용해 주세요.");
-    return;
-  }
-
-  if (!state.backendUrl) {
-    alert("Colab에서 출력된 ngrok URL을 FastAPI 백엔드 URL에 입력해 주세요.");
     return;
   }
 
@@ -492,6 +523,7 @@ async function startSession() {
     $("#studyPage").classList.remove("hidden");
     $("#activeRoomName").textContent = state.roomName;
     renderSpeakerButtons();
+    renderSegments();
     setStatus("녹음 중", true);
   } catch (error) {
     alert(`마이크 권한을 받을 수 없습니다: ${error.message}`);
@@ -626,6 +658,13 @@ $("#pauseRecording").addEventListener("click", pauseOrResume);
 $("#finishSession").addEventListener("click", finishSession);
 $("#downloadCsv").addEventListener("click", downloadCsv);
 $("#restart").addEventListener("click", () => window.location.reload());
+$("#closeModal")?.addEventListener("click", closeSegmentModal);
+segmentModalEl?.addEventListener("click", (event) => {
+  if (event.target?.hasAttribute("data-close-modal")) closeSegmentModal();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeSegmentModal();
+});
 
 state.userId = getUserId();
 $("#userId").value = state.userId;
