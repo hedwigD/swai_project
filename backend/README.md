@@ -4,7 +4,7 @@ This backend receives audio segments from the frontend, transcribes them with Op
 
 ## Recommended: Run In Colab
 
-Use `COLAB_SETUP.md` when you want to run FastAPI in Google Colab and expose it with ngrok.
+Use `COLAB_COMMANDS.md` for copy-paste Colab cells. Use `COLAB_SETUP.md` for the longer explanation.
 
 Short version:
 
