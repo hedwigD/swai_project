@@ -22,7 +22,7 @@ load_dotenv()
 APP_NAME = "SWAI Study Recorder Backend"
 UPLOAD_DIR = Path(os.getenv("AUDIO_UPLOAD_DIR", "uploads"))
 SAVE_AUDIO = os.getenv("SAVE_AUDIO", "true").lower() != "false"
-DEFAULT_SHEET_NAME = os.getenv("SPREADSHEET_TABLE", "swai_segments")
+DEFAULT_SHEET_NAME = os.getenv("SPREADSHEET_TABLE", "swai_segment")
 DEFAULT_APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL", "")
 STT_PROVIDER = os.getenv("STT_PROVIDER", "auto").strip().lower()
 TRANSCRIBE_MODEL = os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe")
@@ -87,6 +87,22 @@ def public_record(metadata: dict[str, Any]) -> dict[str, Any]:
     record.pop("apps_script_url", None)
     record.pop("sheet_name", None)
     return record
+
+
+def compact_session_summary_record(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event": metadata.get("event", ""),
+        "time_stamp": metadata.get("time_stamp", ""),
+        "session_id": metadata.get("session_id", ""),
+        "room_name": metadata.get("room_name", ""),
+        "user_ip": metadata.get("user_ip") or metadata.get("frontend_ip") or metadata.get("backend_client_ip", ""),
+        "user_name": metadata.get("user_name") or metadata.get("participants", ""),
+        "operation_time": metadata.get("operation_time", ""),
+        "pure_study_time": metadata.get("pure_study_time", ""),
+        "chat_duration": metadata.get("chat_duration", ""),
+        "top_speaker": metadata.get("top_speaker", ""),
+        "chat_summary": metadata.get("chat_summary", ""),
+    }
 
 
 async def save_upload(audio: UploadFile, metadata: dict[str, Any]) -> tuple[Path | None, int]:
@@ -648,7 +664,7 @@ async def record_event(payload: EventPayload, request: Request) -> dict[str, Any
     metadata["backend_received_at"] = now_stamp()
     metadata["backend_client_ip"] = get_client_ip(request)
 
-    record = public_record(metadata)
+    record = compact_session_summary_record(metadata) if payload.event == "session_finished" else public_record(metadata)
     spreadsheet_result = await append_to_spreadsheet(record, metadata)
     return {
         "status": "ok",

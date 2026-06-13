@@ -30,7 +30,7 @@ import os
 
 os.environ["OPENAI_API_KEY"] = "YOUR_OPENAI_API_KEY"
 os.environ["APPS_SCRIPT_URL"] = "YOUR_APPS_SCRIPT_EXEC_URL"
-os.environ["SPREADSHEET_TABLE"] = "swai_segments"
+os.environ["SPREADSHEET_TABLE"] = "swai_segment"
 os.environ["OPENAI_TRANSCRIBE_MODEL"] = "gpt-4o-mini-transcribe"
 os.environ["STT_PROVIDER"] = "auto"
 os.environ["LOCAL_STT_MODEL"] = "small"

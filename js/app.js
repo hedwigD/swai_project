@@ -1,6 +1,6 @@
 const DEFAULT_BACKEND_URL = "https://pardon-ion-brute.ngrok-free.dev";
 const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUIBCtr6azQwxAMGdEAiVQIcX1yvQWHdfVs41lViRHPNBbxi7PHiLw6vdjT2iwZlqK/exec";
-const DEFAULT_SHEET_NAME = "swai_segments";
+const DEFAULT_SHEET_NAME = "swai_segment";
 
 const state = {
   roomName: "",
@@ -26,6 +26,7 @@ const state = {
   chunks: [],
   volumeSamples: [],
   segments: [],
+  pendingUploads: [],
   isPaused: false
 };
 
@@ -210,6 +211,50 @@ function updateBoard() {
 function getAverageVolume(samples) {
   if (!samples.length) return 0;
   return samples.reduce((sum, value) => sum + value, 0) / samples.length;
+}
+
+function truncateText(value, maxLength = 240) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+function buildSpeakerBreakdown(chatSegments) {
+  const totals = chatSegments.reduce((map, segment) => {
+    const speaker = segment.speaker || "발화자 미선택";
+    if (!map[speaker]) {
+      map[speaker] = { count: 0, durationMs: 0 };
+    }
+    map[speaker].count += 1;
+    map[speaker].durationMs += segment.durationMs;
+    return map;
+  }, {});
+
+  return Object.entries(totals)
+    .sort((a, b) => b[1].durationMs - a[1].durationMs)
+    .map(([speaker, info]) => `${speaker}: ${info.count}회/${formatDuration(info.durationMs)}`)
+    .join(", ");
+}
+
+function buildChatSummary(chatSegments) {
+  if (!chatSegments.length) {
+    return "잡담으로 판정된 구간이 없습니다.";
+  }
+
+  const topicSnippets = chatSegments
+    .map((segment) => segment.llmSummary || segment.transcript || segment.classificationReason || "")
+    .map((text) => truncateText(text, 90))
+    .filter(Boolean);
+
+  if (!topicSnippets.length) {
+    const speakerBreakdown = buildSpeakerBreakdown(chatSegments);
+    return speakerBreakdown
+      ? `STT 요약은 없고, 잡담 구간은 ${speakerBreakdown}로 기록되었습니다.`
+      : "STT 요약은 없지만 잡담 구간이 감지되었습니다.";
+  }
+
+  const uniqueSnippets = [...new Set(topicSnippets)].slice(0, 5);
+  return truncateText(uniqueSnippets.join(" / "), 500);
 }
 
 function analyzeSegment(durationMs, samples) {
@@ -458,7 +503,11 @@ function startRecorder() {
     state.segments.push(segment);
     renderSegments();
     updateBoard();
-    uploadSegmentRecord(segment);
+    const uploadPromise = uploadSegmentRecord(segment);
+    state.pendingUploads.push(uploadPromise);
+    uploadPromise.finally(() => {
+      state.pendingUploads = state.pendingUploads.filter((item) => item !== uploadPromise);
+    });
   });
 
   recorder.start();
@@ -498,6 +547,7 @@ async function startSession() {
   state.sessionId = `SESSION-${Date.now().toString(36).toUpperCase()}`;
   state.startedAt = Date.now();
   state.segments = [];
+  state.pendingUploads = [];
   state.isPaused = false;
 
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -566,34 +616,45 @@ async function stopMedia() {
 }
 
 async function finishSession() {
+  const finishButton = $("#finishSession");
+  if (finishButton.disabled) return;
+  finishButton.disabled = true;
+  finishButton.textContent = "종료 저장 중";
+
   await stopMedia();
+  if (state.pendingUploads.length > 0) {
+    setStatus("구간 분석 저장 중");
+    await Promise.allSettled(state.pendingUploads);
+  }
 
   const totalMs = Date.now() - state.startedAt;
   const studySegments = state.segments.filter((segment) => segment.decision === "study");
   const chatSegments = state.segments.filter((segment) => segment.decision === "chat");
   const studyMs = studySegments.reduce((sum, segment) => sum + segment.durationMs, 0);
+  const excludedMs = Math.max(0, totalMs - studyMs);
   const speakerCounts = chatSegments.reduce((map, segment) => {
     if (segment.speaker) map[segment.speaker] = (map[segment.speaker] || 0) + 1;
     return map;
   }, {});
   const topSpeaker = Object.entries(speakerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
+  const participantNames = state.participants.join(", ");
+  const chatSummary = buildChatSummary(chatSegments);
 
-  await sendBackendEvent("session_finished", {
-    total_ms: totalMs,
-    total_seconds: Math.round(totalMs / 1000),
-    study_ms: studyMs,
-    study_seconds: Math.round(studyMs / 1000),
-    chat_ms: Math.max(0, totalMs - studyMs),
-    chat_seconds: Math.round(Math.max(0, totalMs - studyMs) / 1000),
-    segment_count: state.segments.length,
-    study_segment_count: studySegments.length,
-    chat_segment_count: chatSegments.length,
-    top_speaker: topSpeaker
+  const summaryResult = await sendBackendEvent("session_finished", {
+    record_type: "session_summary",
+    user_ip: state.userIp,
+    user_name: participantNames,
+    operation_time: formatDuration(totalMs),
+    pure_study_time: formatDuration(studyMs),
+    chat_duration: formatDuration(excludedMs),
+    top_speaker: topSpeaker,
+    chat_summary: chatSummary
   });
+  setStatus(summaryResult.ok ? "요약 저장 완료" : "요약 저장 실패");
 
   $("#resultTotal").textContent = formatDuration(totalMs);
   $("#resultStudy").textContent = formatDuration(studyMs);
-  $("#resultChat").textContent = formatDuration(Math.max(0, totalMs - studyMs));
+  $("#resultChat").textContent = formatDuration(excludedMs);
   $("#resultSegments").textContent = `${state.segments.length}개`;
   $("#resultStudySegments").textContent = `${studySegments.length}개`;
   $("#resultSpeaker").textContent = topSpeaker;
