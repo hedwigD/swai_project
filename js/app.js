@@ -124,6 +124,83 @@ function buildBaseRecord(eventName) {
   };
 }
 
+function jsonpRequest(url, params = {}) {
+  return new Promise((resolve, reject) => {
+    const callbackName = `swaiJsonp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement("script");
+    const cleanup = () => {
+      delete window[callbackName];
+      script.remove();
+      clearTimeout(timeout);
+    };
+    const query = new URLSearchParams({
+      ...params,
+      callback: callbackName
+    });
+    const separator = url.includes("?") ? "&" : "?";
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Apps Script 응답 시간 초과"));
+    }, 12000);
+
+    window[callbackName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Apps Script 요청 실패"));
+    };
+    script.src = `${url}${separator}${query.toString()}`;
+    document.body.appendChild(script);
+  });
+}
+
+function isSpreadsheetSaved(result) {
+  if (!result.ok) return false;
+  const spreadsheetStatus = result.data?.spreadsheet_status;
+  if (spreadsheetStatus) return spreadsheetStatus === "ok";
+  if (result.data?.status) return !["failed", "error"].includes(String(result.data.status).toLowerCase());
+  if (result.data?.ok === false || result.data?.success === false) return false;
+  return true;
+}
+
+function buildCompactSummaryRecord(summaryFields) {
+  const baseRecord = buildBaseRecord("session_finished");
+  return {
+    event: "session_finished",
+    time_stamp: baseRecord.time_stamp,
+    session_id: baseRecord.session_id,
+    room_name: baseRecord.room_name,
+    user_ip: summaryFields.user_ip || baseRecord.frontend_ip,
+    user_name: summaryFields.user_name || baseRecord.participants,
+    operation_time: summaryFields.operation_time,
+    pure_study_time: summaryFields.pure_study_time,
+    chat_duration: summaryFields.chat_duration,
+    top_speaker: summaryFields.top_speaker,
+    chat_summary: summaryFields.chat_summary
+  };
+}
+
+async function insertSummaryDirectly(summaryRecord) {
+  if (!state.appsScriptUrl) {
+    return { ok: false, status: "Apps Script URL 미설정" };
+  }
+
+  try {
+    const data = await jsonpRequest(state.appsScriptUrl, {
+      action: "insert",
+      table: state.sheetName,
+      data: JSON.stringify(summaryRecord)
+    });
+
+    return { ok: true, status: "Apps Script 직접 저장 완료", data };
+  } catch (error) {
+    return { ok: false, status: `Apps Script 직접 저장 실패: ${error.message}`, error };
+  }
+}
+
 async function sendBackendEvent(eventName, payload = {}) {
   if (!state.backendUrl) return { ok: false, status: "백엔드 미설정" };
 
@@ -639,8 +716,7 @@ async function finishSession() {
   const topSpeaker = Object.entries(speakerCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
   const participantNames = state.participants.join(", ");
   const chatSummary = buildChatSummary(chatSegments);
-
-  const summaryResult = await sendBackendEvent("session_finished", {
+  const summaryFields = {
     record_type: "session_summary",
     user_ip: state.userIp,
     user_name: participantNames,
@@ -649,8 +725,10 @@ async function finishSession() {
     chat_duration: formatDuration(excludedMs),
     top_speaker: topSpeaker,
     chat_summary: chatSummary
-  });
-  setStatus(summaryResult.ok ? "요약 저장 완료" : "요약 저장 실패");
+  };
+  const summaryResult = await insertSummaryDirectly(buildCompactSummaryRecord(summaryFields));
+
+  setStatus(isSpreadsheetSaved(summaryResult) ? "요약 저장 완료" : `요약 저장 실패: ${summaryResult.status}`);
 
   $("#resultTotal").textContent = formatDuration(totalMs);
   $("#resultStudy").textContent = formatDuration(studyMs);
