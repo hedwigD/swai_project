@@ -90,6 +90,36 @@ input, select {
   box-shadow: inset 0 -4px 0 rgba(0,0,0,.16);
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.description-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 8px 18px rgba(23,32,28,.06);
+}
+
+.description-link:hover,
+.description-link:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -530,6 +560,8 @@ audio { width: 100%; height: 34px; }
 }
 
 @media (max-width: 860px) {
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .topbar-actions { width: 100%; justify-content: space-between; }
   .setup, .study-layout { grid-template-columns: 1fr; }
   .study-room { min-height: auto; padding: 22px; }
   .board, .preview-board { width: 100%; margin: 0; }

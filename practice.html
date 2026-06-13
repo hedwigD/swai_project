@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>스터디룸 집중 시간 기록</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">S</span> 스터디룸 집중 시간 기록</div>
+      <div class="topbar-actions">
+        <a href="index.html" class="description-link">프로젝트 설명보기</a>
+        <div class="status-pill"><span id="liveDot" class="dot"></span><span id="systemStatus">대기 중</span></div>
+      </div>
+    </header>
+
+    <section id="setupPage" class="setup">
+      <form id="roomForm" class="panel">
+        <h1>스터디룸 만들기</h1>
+        <p class="hint">참가자를 등록하고 세션을 시작하면 실제 녹음 파일을 FastAPI 백엔드로 전송합니다. 백엔드는 STT, 구간 판정, Spreadsheet 기록을 처리합니다.</p>
+
+        <label class="field">
+          <span>스터디룸 이름</span>
+          <input id="roomName" autocomplete="off" value="알고리즘 스터디">
+        </label>
+
+        <label class="field">
+          <span>녹음 구간 길이</span>
+          <select id="segmentSeconds">
+            <option value="10">10초</option>
+            <option value="20" selected>20초</option>
+            <option value="30">30초</option>
+            <option value="60">60초</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>사용자 ID</span>
+          <input id="userId" autocomplete="off" readonly>
+        </label>
+
+        <div class="field">
+          <span>참가자 이름</span>
+          <div class="inline">
+            <input id="participantName" autocomplete="off" placeholder="예: 민수">
+            <button type="button" id="addParticipant">추가</button>
+          </div>
+        </div>
+
+        <div id="participants" class="participants" aria-live="polite"></div>
+        <button type="submit">스터디 시작</button>
+      </form>
+
+      <div class="classroom" aria-hidden="true">
+        <div class="window"></div>
+        <div class="board preview-board">
+          <h2>오늘의 칠판</h2>
+          <div class="board-grid">
+            <div class="chalk-box"><span>전체 스터디 시간</span><strong>0분</strong></div>
+            <div class="chalk-box"><span>인정된 집중 시간</span><strong>0분</strong></div>
+            <div class="chalk-box"><span>최근 구간</span><strong>대기</strong></div>
+            <div class="chalk-box"><span>최근 떠든 사람</span><strong>-</strong></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="studyPage" class="study-layout hidden">
+      <div class="classroom study-room">
+        <div class="board">
+          <h2 id="activeRoomName">스터디룸</h2>
+          <div class="board-grid">
+            <div class="chalk-box"><span>전체 스터디 시간</span><strong id="totalTime">0초</strong></div>
+            <div class="chalk-box"><span>인정된 집중 시간</span><strong id="studyTime">0초</strong></div>
+            <div class="chalk-box"><span>최근 구간 판정</span><strong id="lastDecision">녹음 중</strong></div>
+            <div class="chalk-box"><span>최근 떠든 사람</span><strong id="lastSpeaker">-</strong></div>
+          </div>
+        </div>
+        <div class="decision-strip" aria-live="polite">
+          <div class="decision-strip-head">
+            <span>최근 판정</span>
+            <span>최근 8개</span>
+          </div>
+          <div id="decisionFeed" class="decision-feed"></div>
+        </div>
+      </div>
+
+      <aside class="side">
+        <section class="panel">
+          <h2>녹음 상태</h2>
+          <p id="recordingText" class="hint">마이크 권한을 기다리고 있습니다.</p>
+          <div class="meter-wrap"><div id="meter" class="meter"></div></div>
+          <div class="actions">
+            <button type="button" id="pauseRecording" class="secondary">일시정지</button>
+            <button type="button" id="finishSession" class="danger">스터디 종료</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>현재 말한 사람</h2>
+          <p class="hint">MVP에서는 잡담 구간의 발화자를 수동 선택값으로 함께 보냅니다.</p>
+          <div id="speakerButtons" class="speaker-grid"></div>
+        </section>
+
+      </aside>
+    </section>
+
+    <section id="resultPage" class="hidden">
+      <div class="board result-board">
+        <h2>스터디 결과</h2>
+        <div class="result-summary">
+          <div class="chalk-box"><span>총 스터디 시간</span><strong id="resultTotal">0초</strong></div>
+          <div class="chalk-box"><span>인정된 집중 시간</span><strong id="resultStudy">0초</strong></div>
+          <div class="chalk-box"><span>제외된 시간</span><strong id="resultChat">0초</strong></div>
+          <div class="chalk-box"><span>전체 구간 수</span><strong id="resultSegments">0개</strong></div>
+          <div class="chalk-box"><span>공부 구간 수</span><strong id="resultStudySegments">0개</strong></div>
+          <div class="chalk-box"><span>가장 많이 떠든 사람</span><strong id="resultSpeaker">-</strong></div>
+        </div>
+        <div class="actions">
+          <button type="button" id="restart" class="secondary">새 스터디 시작</button>
+          <button type="button" id="downloadCsv">CSV 다운로드</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="segmentModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-backdrop" data-close-modal></div>
+    <section class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <span id="modalBadge" class="badge">공부</span>
+          <h2 id="modalTitle">구간 상세</h2>
+        </div>
+        <button type="button" id="closeModal" class="secondary modal-close" aria-label="닫기">x</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </section>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
